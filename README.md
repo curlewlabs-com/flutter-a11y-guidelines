@@ -148,8 +148,10 @@ The tests under `test/` hold each of these cases, and a passing one beside it.
   color to measure. The guideline fails it rather than drop it from coverage.
 - **The state guideline never completes a tap.** It holds each press and then
   cancels it, so the page under test does not navigate, open a dialog, or call
-  a service. Disabled controls are not driven, since WCAG exempts inactive
-  components. It settles the page for every state of every control, so its
+  a service. A control with a long-press action is released before the
+  long-press deadline, so its pressed state is measured part-way into the
+  press animation. Disabled controls are not driven, since WCAG exempts
+  inactive components. It settles the page for every state of every control, so its
   cost grows with the number of controls on the page.
 - **Generic words are matched whole.** "Button", "IconButton", "Switch",
   "Toggle", "Checkbox", "Radio" and "Tab" are rejected in any case; "Switch
@@ -161,6 +163,39 @@ The tests under `test/` hold each of these cases, and a passing one beside it.
   3.1.1 is about the platform telling assistive technology the content
   language, which happens in the engine, below what a widget test can see. The
   guideline checks the floor under it: a localization scope exists.
+
+## Known limits
+
+These are where the measurement model stops. Each one lets a real violation
+pass, or measures less than the guideline's name suggests, so a page that
+passes is not proven compliant:
+
+- **One background per text element.** The background is the most frequent
+  color around the whole element's box, other than the text color. Spans of
+  one paragraph drawn over different fills share that one background. Text on
+  a fill of exactly its own color is measured against whatever surrounds the
+  fill.
+- **Text is located by its semantics label.** As in the stock guideline, the
+  painted text is found with `find.text` on the node's label, so text whose
+  semantics label differs from its characters (`Text(semanticsLabel: ...)`), or
+  a node whose label merges several texts, is not measured.
+- **Ancestor opacity is not composited.** The declared color's own alpha is
+  applied; an `Opacity` or `FadeTransition` above the text or graphic is not.
+  For graphics that is deliberate (an entrance animation must not hide a failing
+  color), and for text it means faded text is measured at full strength.
+- **The state walk starts where the page is.** Each vertical scrollable found
+  hit-testable on the first screen is stepped from its current offset down to
+  its end. Controls above a non-zero starting offset, and scrollables that only
+  appear further down, are not driven. A control is driven once, the first time
+  it is on screen.
+- **One view.** The guidelines are written for a test with a single
+  `FlutterView`; pointers are sent to the default view.
+- **`pageTitledGuideline` reads every node.** A `namesRoute` title satisfies it
+  even when the node is hidden from assistive technology.
+- **`localizationScopeGuideline` checks one leaf.** It resolves the locale from
+  the last element in depth-first order. In an app pumped under a `WidgetsApp`
+  that leaf is inside the app's scope; a tree that also holds a branch outside
+  any scope can pass or fail by branch order.
 
 ## Requirements
 

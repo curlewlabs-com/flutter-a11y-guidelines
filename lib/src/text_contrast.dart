@@ -283,10 +283,13 @@ class DeclaredColorTextContrastGuidelineAAA extends AccessibilityGuideline {
     TextStyle inherited,
     Set<TextStyle> into,
   ) {
+    // Inside a span tree a child always takes its parent's unspecified
+    // fields, whatever its `inherit` says (`TextStyle.inherit`); the flag only
+    // governs merging with DefaultTextStyle, which the root handled above.
     final TextStyle? own = span.style;
     final TextStyle resolved = own == null
         ? inherited
-        : (own.inherit ? inherited.merge(own) : own);
+        : inherited.merge(own.copyWith(inherit: true));
 
     if (span is TextSpan) {
       if (span.text?.isNotEmpty ?? false) into.add(resolved);

@@ -173,6 +173,32 @@ void main() {
       );
     }
 
+    // A child span takes its parent's unspecified fields whatever its
+    // `inherit` flag says; reading the flag would leave this span with no
+    // color and fail it.
+    testWidgets('an inherit: false child span takes its parent color', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await _pumpText(
+        tester,
+        const Text.rich(
+          TextSpan(
+            style: TextStyle(color: Colors.black, fontSize: 14),
+            children: [
+              TextSpan(
+                text: 'bold child',
+                style: TextStyle(inherit: false, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      await expectLater(tester, meetsGuideline(textContrastGuidelineAAA));
+      handle.dispose();
+    });
+
     testWidgets('a sub-AAA child span fails under an AAA default', (
       tester,
     ) async {

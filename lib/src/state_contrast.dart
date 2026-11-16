@@ -41,8 +41,15 @@ const AccessibilityGuideline stateContrastGuidelineAAA =
 /// text answers to the same floor.
 ///
 /// A press is held and cancelled, never lifted, so no tap completes: the page
-/// under test does not navigate, open a dialog, or call its services. Disabled
-/// controls are not driven, since WCAG 1.4.3 exempts inactive components.
+/// under test does not navigate, open a dialog, or call its services. A
+/// control with a long-press action is released before the long-press
+/// deadline, so its pressed state is measured part-way into its press
+/// animation. Disabled controls are not driven, since WCAG 1.4.3 exempts
+/// inactive components.
+///
+/// A scrollable that is still growing after a fixed number of viewport steps,
+/// such as a list with no item count, fails with a message saying the walk
+/// could not finish, rather than walking forever.
 ///
 /// This drives the page - pointers, focus, and scroll position - so run it
 /// after any guideline that measures the page at rest.
@@ -62,6 +69,15 @@ class StateContrastGuidelineAAA extends AccessibilityGuideline {
   // so only a page that animates forever reaches it.
   static const Duration _settleCap = Duration(seconds: 2);
   static const Duration _frame = Duration(milliseconds: 100);
+
+  // A held press on a control with a long-press action ends a frame before
+  // the long-press deadline, which also bounds its settle.
+  static final Duration _longPressableHold =
+      kLongPressTimeout - kPressTimeout - _frame;
+
+  // Far more viewports than a finite page holds; a walk that reaches it is
+  // following a list that grows as it scrolls.
+  static const int _maxStepsPerScrollable = 200;
 
   @override
   String get description =>
@@ -98,11 +114,24 @@ class StateContrastGuidelineAAA extends AccessibilityGuideline {
       if (!position.hasContentDimensions) continue;
       final double start = position.pixels;
       var offset = start;
+      var steps = 0;
       while (offset < position.maxScrollExtent) {
+        if (steps++ == _maxStepsPerScrollable) {
+          result += Evaluation.fail(
+            'Stopped walking $scrollable after $_maxStepsPerScrollable '
+            'viewports with more content still below: controls past this '
+            'point were not driven. A list that builds without an item count '
+            'cannot be walked to its end.',
+          );
+          break;
+        }
+        final double previous = offset;
         offset = (offset + position.viewportDimension).clamp(
           position.minScrollExtent,
           position.maxScrollExtent,
         );
+        // A zero-height viewport never advances.
+        if (offset <= previous) break;
         position.jumpTo(offset);
         await _settle(tester);
         result += await _measureOnScreen(tester, driven);
@@ -148,7 +177,10 @@ class StateContrastGuidelineAAA extends AccessibilityGuideline {
       // to be the same interval, so this states what the press waits on
       // rather than leaning on that coincidence.
       await tester.pump(kPressTimeout);
-      await _settle(tester);
+      await _settle(
+        tester,
+        cap: target.longPressable ? _longPressableHold : _settleCap,
+      );
       result += await _measure(tester, 'pressing ${target.label}');
       // Cancelled, never lifted: a lift completes the tap, and the page would
       // navigate, open a dialog, or call its service under the guideline.
@@ -167,12 +199,12 @@ class StateContrastGuidelineAAA extends AccessibilityGuideline {
     return result;
   }
 
-  Future<void> _settle(WidgetTester tester) async {
+  Future<void> _settle(WidgetTester tester, {Duration cap = _settleCap}) async {
     var elapsed = Duration.zero;
     do {
       await tester.pump(_frame);
       elapsed += _frame;
-    } while (tester.binding.hasScheduledFrame && elapsed < _settleCap);
+    } while (tester.binding.hasScheduledFrame && elapsed < cap);
   }
 
   Future<Evaluation> _measure(WidgetTester tester, String state) async {
@@ -226,6 +258,7 @@ class StateContrastGuidelineAAA extends AccessibilityGuideline {
             center: center,
             label: '"$label"',
             tappable: tappable,
+            longPressable: data.hasAction(SemanticsAction.longPress),
             focusable: focusable,
           ),
         );
@@ -245,6 +278,7 @@ class _Target {
     required this.center,
     required this.label,
     required this.tappable,
+    required this.longPressable,
     required this.focusable,
   });
 
@@ -253,5 +287,6 @@ class _Target {
   final Offset center;
   final String label;
   final bool tappable;
+  final bool longPressable;
   final bool focusable;
 }

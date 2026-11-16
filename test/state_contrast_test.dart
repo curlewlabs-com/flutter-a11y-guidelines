@@ -86,6 +86,57 @@ void main() {
     expect(taps, 0);
   });
 
+  // A long-press handler fires at its deadline whether or not the press is
+  // later cancelled, so a press held through a full settle would run it.
+  testWidgets('drives a press without firing a long-press handler', (
+    tester,
+  ) async {
+    var taps = 0;
+    var longPresses = 0;
+    await _pumpFixture(
+      tester,
+      TextButton(
+        onPressed: () => taps++,
+        onLongPress: () => longPresses++,
+        child: const Text('Edit time'),
+      ),
+    );
+
+    await stateContrastGuidelineAAA.evaluate(tester);
+
+    expect(taps, 0);
+    expect(longPresses, 0);
+  });
+
+  // A list with no item count grows as it scrolls; without a bound the walk
+  // never returns, and the test hangs instead of failing.
+  testWidgets('fails, rather than hangs, on a list that never ends', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          backgroundColor: _surface,
+          body: ListView.builder(
+            itemBuilder: (context, index) => SizedBox(
+              height: 120,
+              child: Text(
+                'row $index',
+                style: const TextStyle(color: _restInk),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final Evaluation evaluation = await stateContrastGuidelineAAA.evaluate(
+      tester,
+    );
+    expect(evaluation.passed, isFalse);
+    expect(evaluation.reason, contains('Stopped walking'));
+  });
+
   // `styleFrom` handed a foreground synthesizes an overlay tinted with it,
   // which darkens the fill under the label. The label never changes color, so
   // only a measurement of the painted state sees it.
