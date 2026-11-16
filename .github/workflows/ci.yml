@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # The guidelines read painted pixels, which come from the host's own test
+    # engine, so the tests run on the hosts widget tests are usually run on.
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Flutter
+        env:
+          # renovate: datasource=flutter-version depName=flutter
+          FLUTTER_VERSION: 3.47.8
+        # A shallow clone of the release tag, rather than a setup action: one
+        # fewer third-party action, and the tool downloads its own engine
+        # artifacts on first run.
+        run: |
+          git clone --depth 1 --branch "$FLUTTER_VERSION" \
+            https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+      - name: Flutter version
+        run: flutter --version
+      # No lock is committed, as for any library. Beyond what the pinned
+      # Flutter pins, it resolves flutter_lints, pinned exactly, and the lints
+      # release flutter_lints' own range admits.
+      - name: Resolve packages
+        run: flutter pub get
+      - name: Format
+        run: dart format --output=none --set-exit-if-changed .
+      - name: Analyze
+        run: flutter analyze
+      - name: Test
+        run: flutter test
+
+  actionlint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run actionlint
+        # The installer script is pinned to a commit rather than its main
+        # branch, and fetches the release named after it. Renovate moves the
+        # release; the script's commit moves by hand, and need not match.
+        run: |
+          # renovate: datasource=github-releases depName=rhysd/actionlint extractVersion=^v(?<version>.+)$
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/914e7df21a07ef503a81201c76d2b11c789d3fca/scripts/download-actionlint.bash) 1.7.12
+          ./actionlint -color
+
+  # The one check branch protection requires, so a job added above is covered
+  # by adding it here.
+  conclusion:
+    needs: [test, actionlint]
+    runs-on: ubuntu-24.04
+    if: always()
+    steps:
+      - name: Require every job to pass
+        env:
+          TEST: ${{ needs.test.result }}
+          ACTIONLINT: ${{ needs.actionlint.result }}
+        run: test "$TEST" = success && test "$ACTIONLINT" = success
