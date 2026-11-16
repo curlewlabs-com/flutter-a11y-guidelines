@@ -65,18 +65,19 @@ class PaintedView {
   }
 }
 
-/// The most frequent color in [histogram] that is not [declared] itself.
+/// The most frequent color in [histogram] that is none of [marks], the colors
+/// the marks in the box declare.
 ///
-/// Excluding the declared color removes the fully covered core of the mark - a
-/// glyph's, or a dot's. Every remaining edge pixel is a partial-coverage blend
-/// spread thin across many values, so what is left with a real count is the
-/// fill behind the mark. Returns null when the box holds nothing but the
-/// declared color.
-Color? backgroundBehind(Map<Color, int> histogram, Color declared) {
+/// Excluding the declared colors removes the fully covered cores of the marks -
+/// a paragraph's glyphs in each of its span colors, or a dot's. Every
+/// remaining edge pixel is a partial-coverage blend spread thin across many
+/// values, so what is left with a real count is the fill behind the marks.
+/// Returns null when the box holds nothing but declared colors.
+Color? backgroundBehind(Map<Color, int> histogram, Set<Color> marks) {
   Color? best;
   var bestCount = 0;
   for (final MapEntry<Color, int> entry in histogram.entries) {
-    if (entry.key == declared) continue;
+    if (marks.contains(entry.key)) continue;
     if (entry.value > bestCount) {
       best = entry.key;
       bestCount = entry.value;

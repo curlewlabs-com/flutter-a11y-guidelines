@@ -31,10 +31,13 @@ const AccessibilityGuideline stateContrastGuidelineAAA =
 /// describe.
 ///
 /// It reaches every enabled control that takes a tap or focus, on screen where
-/// the page first paints and again at each viewport-sized step through every
-/// vertical scrollable the pointer can reach. The steps reach a control below
-/// the fold, which a lazily built list has not mounted and nothing short of
-/// scrolling, Tab traversal included, would find.
+/// the page first paints and again at each half-viewport step through every
+/// vertical scrollable the pointer can reach, from each one's start to its end,
+/// nested ones included where they appear. The steps reach a control below the
+/// fold, which a lazily built list has not mounted and nothing short of
+/// scrolling, Tab traversal included, would find. Half a viewport, so any
+/// control up to that height is wholly in view at some step, where its label
+/// can be measured.
 ///
 /// The whole tree is measured in each state, not just the driven control: a
 /// state can paint text elsewhere - a tooltip on hover or long press - and that
@@ -75,8 +78,8 @@ class StateContrastGuidelineAAA extends AccessibilityGuideline {
   static final Duration _longPressableHold =
       kLongPressTimeout - kPressTimeout - _frame;
 
-  // Far more viewports than a finite page holds; a walk that reaches it is
-  // following a list that grows as it scrolls.
+  // Far more half-viewports than a finite page holds; a walk that reaches it
+  // is following a list that grows as it scrolls.
   static const int _maxStepsPerScrollable = 200;
 
   @override
@@ -101,58 +104,134 @@ class StateContrastGuidelineAAA extends AccessibilityGuideline {
   }
 
   Future<Evaluation> _walk(WidgetTester tester) async {
-    var result = const Evaluation.pass();
-    final driven = <int>{};
-    result += await _measureOnScreen(tester, driven);
+    final driven = <String>{};
+    final walked = <(ScrollableState, Rect)>{};
+    var result = await _measureOnScreen(tester, driven);
+    result += await _walkNewScrollables(tester, driven, walked);
+    return result;
+  }
 
-    final List<ScrollableState> scrollables = tester
-        .stateList<ScrollableState>(find.byType(Scrollable).hitTestable())
-        .where((s) => s.position.axis == Axis.vertical)
-        .toList();
-    for (final ScrollableState scrollable in scrollables) {
-      final ScrollPosition position = scrollable.position;
-      if (!position.hasContentDimensions) continue;
-      final double start = position.pixels;
-      var offset = start;
-      var steps = 0;
-      while (offset < position.maxScrollExtent) {
-        if (steps++ == _maxStepsPerScrollable) {
-          result += Evaluation.fail(
-            'Stopped walking $scrollable after $_maxStepsPerScrollable '
-            'viewports with more content still below: controls past this '
-            'point were not driven. A list that builds without an item count '
-            'cannot be walked to its end.',
-          );
-          break;
-        }
-        final double previous = offset;
-        offset = (offset + position.viewportDimension).clamp(
-          position.minScrollExtent,
-          position.maxScrollExtent,
-        );
-        // A zero-height viewport never advances.
-        if (offset <= previous) break;
-        position.jumpTo(offset);
-        await _settle(tester);
-        result += await _measureOnScreen(tester, driven);
+  // Walks every vertical scrollable the pointer can reach now that has not
+  // been walked with its current part in view, each while it exists. Called
+  // again at every position a walk reaches, so a scrollable that only appears
+  // further down, or inside a lazy list that will dispose it once scrolled
+  // past, is walked where it is - and one an ancestor clipped is walked again
+  // once more of it is in view, since its end could not be reached before.
+  Future<Evaluation> _walkNewScrollables(
+    WidgetTester tester,
+    Set<String> driven,
+    Set<(ScrollableState, Rect)> walked,
+  ) async {
+    var result = const Evaluation.pass();
+    while (true) {
+      final (ScrollableState, Rect)? next = tester
+          .stateList<ScrollableState>(find.byType(Scrollable).hitTestable())
+          .where((s) => s.mounted && s.position.axis == Axis.vertical)
+          .map((s) => (s, _visiblePart(tester, s)))
+          .where((key) => !walked.contains(key))
+          .firstOrNull;
+      if (next == null) return result;
+      walked.add(next);
+      result += await _walkScrollable(tester, next.$1, driven, walked);
+    }
+  }
+
+  // The part of [scrollable]'s box in view, in its own coordinates rounded to
+  // whole logical pixels: its box clipped by the test's view and by every
+  // viewport above it.
+  Rect _visiblePart(WidgetTester tester, ScrollableState scrollable) {
+    final RenderObject? box = scrollable.context.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return Rect.zero;
+    Rect global(RenderBox of) => MatrixUtils.transformRect(
+      of.getTransformTo(null),
+      Offset.zero & of.size,
+    );
+    final Rect own = global(box);
+    var visible = own.intersect(
+      Offset.zero & (tester.view.physicalSize / tester.view.devicePixelRatio),
+    );
+    for (RenderObject? up = box.parent; up != null; up = up.parent) {
+      if (up case final RenderBox viewport
+          when up is RenderAbstractViewport && viewport.hasSize) {
+        visible = visible.intersect(global(viewport));
       }
+    }
+    if (visible.isEmpty) return Rect.zero;
+    final Rect local = visible.shift(-own.topLeft);
+    return Rect.fromLTRB(
+      local.left.roundToDouble(),
+      local.top.roundToDouble(),
+      local.right.roundToDouble(),
+      local.bottom.roundToDouble(),
+    );
+  }
+
+  // Steps [scrollable] from its start to its end half a viewport at a time,
+  // measuring each position, then puts it back where the page had it.
+  Future<Evaluation> _walkScrollable(
+    WidgetTester tester,
+    ScrollableState scrollable,
+    Set<String> driven,
+    Set<(ScrollableState, Rect)> walked,
+  ) async {
+    var result = const Evaluation.pass();
+    final ScrollPosition position = scrollable.position;
+    if (!position.hasContentDimensions) return result;
+    final double start = position.pixels;
+    // From the start, so controls above where the page opened are reached.
+    var offset = position.minScrollExtent;
+    if (offset != start) {
+      position.jumpTo(offset);
+      await _settle(tester);
+      result += await _measureOnScreen(tester, driven);
+    }
+    result += await _walkNewScrollables(tester, driven, walked);
+    var steps = 0;
+    while (scrollable.mounted && offset < position.maxScrollExtent) {
+      if (steps++ == _maxStepsPerScrollable) {
+        result += Evaluation.fail(
+          'Stopped walking $scrollable after $_maxStepsPerScrollable '
+          'steps with more content still below: controls past this '
+          'point were not driven. A list that builds without an item count '
+          'cannot be walked to its end.',
+        );
+        break;
+      }
+      final double previous = offset;
+      offset = (offset + position.viewportDimension / 2).clamp(
+        position.minScrollExtent,
+        position.maxScrollExtent,
+      );
+      // A zero-height viewport never advances.
+      if (offset <= previous) break;
+      position.jumpTo(offset);
+      await _settle(tester);
+      result += await _measureOnScreen(tester, driven);
+      result += await _walkNewScrollables(tester, driven, walked);
+    }
+    // A lazily built scrollable can be disposed by its parent's walk.
+    if (scrollable.mounted) {
       position.jumpTo(start);
       await _settle(tester);
     }
     return result;
   }
 
-  // [driven] holds the semantics ids already measured, so a control still on
-  // screen after a scroll step is not driven twice. A control that scrolled
-  // out, was rebuilt under a new id, and comes back on screen is driven again,
-  // which costs time and misses nothing.
+  // [driven] holds each control already measured, by semantics id and by
+  // which part of it is in view, so a control still on screen after a scroll
+  // step is not driven twice. Semantics clips a node's rect to what is in
+  // view and re-bases it, so the part in view is told by the rect's size and
+  // by which edges of the view cut it: a control is driven again whenever a
+  // step shows another part of it - and its text. A control
+  // that scrolled out, was rebuilt under a new id, and comes back on screen is
+  // driven again, which costs time and misses nothing.
   Future<Evaluation> _measureOnScreen(
     WidgetTester tester,
-    Set<int> driven,
+    Set<String> driven,
   ) async {
     var result = const Evaluation.pass();
     for (final _Target target in _onScreenTargets(tester)) {
-      if (!driven.add(target.id)) continue;
+      if (!driven.add(target.key)) continue;
       result += await _measureStates(tester, target);
     }
     return result;
@@ -244,7 +323,13 @@ class StateContrastGuidelineAAA extends AccessibilityGuideline {
     final bool focusable = data.hasAction(SemanticsAction.focus);
     if (!isDisabled && (tappable || focusable)) {
       final Rect physical = semanticsNodeViewRect(node);
-      final Offset center = physical.center / devicePixelRatio;
+      final Rect logical = Rect.fromLTRB(
+        physical.left / devicePixelRatio,
+        physical.top / devicePixelRatio,
+        physical.right / devicePixelRatio,
+        physical.bottom / devicePixelRatio,
+      );
+      final Offset center = logical.center;
       // A control outside the view takes no pointer, so driving it would only
       // re-measure the resting page; a later scroll step reaches it instead.
       if (view.contains(center)) {
@@ -258,6 +343,11 @@ class StateContrastGuidelineAAA extends AccessibilityGuideline {
             center: center,
             label: '"$label"',
             tappable: tappable,
+            key:
+                '${node.id}:${logical.width.round()}x'
+                '${logical.height.round()}:'
+                '${logical.top <= view.top + 0.5 ? 'top' : ''}'
+                '${logical.bottom >= view.bottom - 0.5 ? 'bottom' : ''}',
             longPressable: data.hasAction(SemanticsAction.longPress),
             focusable: focusable,
           ),
@@ -278,6 +368,7 @@ class _Target {
     required this.center,
     required this.label,
     required this.tappable,
+    required this.key,
     required this.longPressable,
     required this.focusable,
   });
@@ -287,6 +378,7 @@ class _Target {
   final Offset center;
   final String label;
   final bool tappable;
+  final String key;
   final bool longPressable;
   final bool focusable;
 }

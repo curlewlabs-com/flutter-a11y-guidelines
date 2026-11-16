@@ -324,4 +324,170 @@ void main() {
       );
     }
   });
+
+  // A short span's glyphs are a small share of the box, so a background picked
+  // as the most frequent non-own color could be the longer span's glyphs. A
+  // light span among dark ones on white must be measured against the white.
+  // At this size and line height the box font's black glyphs outnumber the
+  // white fill in the sampled box, which is the case that read as black. The
+  // twin with a dark span is the same box, and passes.
+  for (final (spanColor, passes) in [
+    // About 2.3:1 on white.
+    (const Color(0xFFAAAAAA), false),
+    // About 9.7:1 on white.
+    (const Color(0xFF444444), true),
+  ]) {
+    testWidgets('a short span is measured against the fill, not other glyphs '
+        '(${passes ? 'dark' : 'light'} span)', (tester) async {
+      final handle = tester.ensureSemantics();
+      await _pumpText(
+        tester,
+        Text.rich(
+          TextSpan(
+            style: const TextStyle(
+              color: Colors.black,
+              fontSize: 60,
+              height: 1.0,
+            ),
+            children: [
+              const TextSpan(text: 'MMMMMMMMMMMM'),
+              TextSpan(
+                text: 'i',
+                style: TextStyle(color: spanColor),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      await expectLater(
+        tester,
+        passes
+            ? meetsGuideline(textContrastGuidelineAAA)
+            : doesNotMeetGuideline(textContrastGuidelineAAA),
+      );
+      handle.dispose();
+    });
+  }
+
+  // A field paints its controller's span tree, which can be styled apart from
+  // the field's own style.
+  group('editable text', () {
+    Future<void> pumpField(WidgetTester tester, Color spanColor) => _pumpText(
+      tester,
+      SizedBox(
+        width: 200,
+        child: TextField(
+          controller: _StyledController(spanColor),
+          style: const TextStyle(color: Colors.black, fontSize: 14),
+        ),
+      ),
+    );
+
+    testWidgets('a controller span below the bar fails', (tester) async {
+      final handle = tester.ensureSemantics();
+      await pumpField(tester, const Color(0xFFAAAAAA));
+
+      await expectLater(tester, doesNotMeetGuideline(textContrastGuidelineAAA));
+      handle.dispose();
+    });
+
+    testWidgets('a controller span above the bar passes', (tester) async {
+      final handle = tester.ensureSemantics();
+      await pumpField(tester, Colors.black);
+
+      await expectLater(tester, meetsGuideline(textContrastGuidelineAAA));
+      handle.dispose();
+    });
+  });
+
+  // 24px is large text; scaled to half it paints at 12px, where #6E6E6E's
+  // 5.1:1 is under the normal-text bar. The twin is the same scaled text in an
+  // ink that clears 7:1.
+  for (final (ink, passes) in [(_aaOnlyGrey, false), (_aaaFloorGrey, true)]) {
+    testWidgets('text scaled below the large sizes is held to 7:1 '
+        '(${passes ? 'passing' : 'failing'} ink)', (tester) async {
+      final handle = tester.ensureSemantics();
+      await _pumpText(
+        tester,
+        Text(
+          'scaled',
+          textScaler: const TextScaler.linear(0.5),
+          style: TextStyle(color: ink, fontSize: 24),
+        ),
+      );
+
+      await expectLater(
+        tester,
+        passes
+            ? meetsGuideline(textContrastGuidelineAAA)
+            : doesNotMeetGuideline(textContrastGuidelineAAA),
+      );
+      handle.dispose();
+    });
+  }
+
+  // A field paints the span tree its controller returns as it is: a span that
+  // does not carry the field's style does not inherit its size. Here the
+  // field asks for 24px, which would be large text, while the controller's
+  // span paints at the default 14px in #6E6E6E - normal text at 5.1:1.
+  for (final (ink, passes) in [(_aaOnlyGrey, false), (_aaaFloorGrey, true)]) {
+    testWidgets('a field is measured in the spans it paints, not its style '
+        '(${passes ? 'passing' : 'failing'} ink)', (tester) async {
+      final handle = tester.ensureSemantics();
+      await _pumpText(
+        tester,
+        SizedBox(
+          width: 300,
+          child: TextField(
+            controller: _UnstyledController(ink),
+            style: const TextStyle(color: Colors.black, fontSize: 24),
+          ),
+        ),
+      );
+
+      await expectLater(
+        tester,
+        passes
+            ? meetsGuideline(textContrastGuidelineAAA)
+            : doesNotMeetGuideline(textContrastGuidelineAAA),
+      );
+      handle.dispose();
+    });
+  }
+}
+
+// A controller that paints its text in a color of its own.
+class _StyledController extends TextEditingController {
+  _StyledController(this.color) : super(text: 'styled');
+
+  final Color color;
+
+  @override
+  TextSpan buildTextSpan({
+    required BuildContext context,
+    TextStyle? style,
+    required bool withComposing,
+  }) => TextSpan(
+    text: text,
+    style: style?.copyWith(color: color),
+  );
+}
+
+// A controller whose span names only a color, as a controller may: nothing
+// of the field's style reaches what it paints.
+class _UnstyledController extends TextEditingController {
+  _UnstyledController(this.color) : super(text: 'unstyled');
+
+  final Color color;
+
+  @override
+  TextSpan buildTextSpan({
+    required BuildContext context,
+    TextStyle? style,
+    required bool withComposing,
+  }) => TextSpan(
+    text: text,
+    style: TextStyle(color: color),
+  );
 }

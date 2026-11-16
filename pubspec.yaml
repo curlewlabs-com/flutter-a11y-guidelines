@@ -3,7 +3,7 @@ description: >-
   Accessibility guidelines for Flutter widget tests: AAA text contrast from
   declared colors, contrast in hover, press and focus states, non-text graphic
   contrast, and semantics label, heading, title and locale checks.
-version: 0.1.0
+version: 0.2.0
 repository: https://github.com/curlewlabs-com/flutter-a11y-guidelines
 issue_tracker: https://github.com/curlewlabs-com/flutter-a11y-guidelines/issues
 # Distributed from GitHub only.

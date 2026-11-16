@@ -17,11 +17,10 @@ import 'sampling.dart';
 /// quiet on purpose. So this measures only the widget types an app names - a
 /// status dot, a severity badge - one guideline per type.
 ///
-/// The model is a solid mark of one declared color: [ring] logical pixels
-/// around the widget's box are sampled, the declared color is set aside, and
-/// the most frequent remaining color is the background. The ring must be wide
-/// enough for that background to outnumber the mark's antialiased edge pixels.
-/// A gradient or multi-color graphic does not fit the model.
+/// The model is a solid mark of one declared color: a ring of logical pixels
+/// around the widget's box is sampled with it, the declared color is set
+/// aside, and the most frequent remaining color is the background. A gradient
+/// or multi-color graphic does not fit the model.
 ///
 /// The verdict comes from the declared color, never from a pixel search for
 /// it. A graphic mid-animation - scaling or fading in - may have no pixel
@@ -30,22 +29,18 @@ import 'sampling.dart';
 class GraphicContrastGuideline<T extends Widget>
     extends AccessibilityGuideline {
   /// Measures every [T] in the tree.
-  const GraphicContrastGuideline({
-    required this.colorOf,
-    this.ring = 6.0,
-    this.hint,
-  });
+  const GraphicContrastGuideline({required this.colorOf, this.hint});
 
   /// The color the widget declares for its mark.
   final Color Function(T widget) colorOf;
 
-  /// How far around the widget's box the background is sampled, in logical
-  /// pixels.
-  final double ring;
-
   /// Appended to each failure: where the graphic's colors are defined, or what
   /// the graphic conveys.
   final String? hint;
+
+  // Wide enough for the background to outnumber a mark's antialiased edge,
+  // which is a pixel or two at any size, so no graphic needs another width.
+  static const double _ring = 6.0;
 
   // WCAG 1.4.11's floor for a non-text graphic that carries meaning.
   static const double _target = 3.0;
@@ -81,12 +76,12 @@ class GraphicContrastGuideline<T extends Widget>
 
     final Rect bounds = MatrixUtils.transformRect(
       renderObject.getTransformTo(null),
-      renderObject.paintBounds.inflate(ring),
+      renderObject.paintBounds.inflate(_ring),
     );
     final Map<Color, int> histogram = painted.colorsWithin(bounds);
     if (histogram.isEmpty) return const Evaluation.pass();
 
-    final Color? background = backgroundBehind(histogram, declared);
+    final Color? background = backgroundBehind(histogram, {declared});
     if (background == null) {
       return Evaluation.fail(
         '$T($declared):\n'

@@ -57,7 +57,7 @@ dev_dependencies:
   flutter_a11y_guidelines:
     git:
       url: https://github.com/curlewlabs-com/flutter-a11y-guidelines.git
-      ref: v0.1.0
+      ref: v0.2.0
 ```
 
 Then check each guideline in a widget test, after the stock ones:
@@ -118,22 +118,21 @@ const statusDotContrast = GraphicContrastGuideline<StatusDot>(
 Color statusDotColor(StatusDot dot) => dot.color;
 ```
 
-The guideline expects a solid mark of one color. It samples `ring` logical
-pixels around the widget's box (6 by default) and takes the most frequent color
-that is not the mark's own as the background. The ring has to be wide enough
-for that background to outnumber the mark's antialiased edge pixels.
+The guideline expects a solid mark of one color. It samples a ring a few
+logical pixels wide around the widget's box and takes the most frequent color
+that is not the mark's own as the background.
 
 ## What each guideline rejects
 
-| Guideline                         | A widget it rejects                                                                     |
-| --------------------------------- | --------------------------------------------------------------------------------------- |
-| `textContrastGuidelineAAA`        | `Text('Hi', style: TextStyle(color: Color(0xFF6E6E6E), fontSize: 14))` on white (5.1:1) |
+| Guideline                         | A widget it rejects                                                                                                                                                                   |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `textContrastGuidelineAAA`        | `Text('Hi', style: TextStyle(color: Color(0xFF6E6E6E), fontSize: 14))` on white (5.1:1)                                                                                               |
 | `stateContrastGuidelineAAA`       | `TextButton(style: TextButton.styleFrom(foregroundColor: Color(0xFF244A6A)), ...)` on `Color(0xFFECE4D5)`: passes at rest; its hover, press and focus overlays each take it under 7:1 |
-| `GraphicContrastGuideline<T>`     | A 10px `T` filled `Color(0xFFCFE0CF)` on white (1.38:1)                                 |
-| `explicitSemanticsLabelGuideline` | `Semantics(button: true, label: 'Button', child: GestureDetector(onTap: ...))`          |
-| `headingLabelQualityGuideline`    | `Semantics(header: true, label: 'Tab', child: ...)`                                     |
-| `pageTitledGuideline`             | A `Scaffold` with body text, no `AppBar` title and no `namesRoute` node                 |
-| `localizationScopeGuideline`      | A tree pumped under a bare `Directionality`, with no `WidgetsApp` or `Localizations`    |
+| `GraphicContrastGuideline<T>`     | A 10px `T` filled `Color(0xFFCFE0CF)` on white (1.38:1)                                                                                                                               |
+| `explicitSemanticsLabelGuideline` | `Semantics(button: true, label: 'Button', child: GestureDetector(onTap: ...))`                                                                                                        |
+| `headingLabelQualityGuideline`    | `Semantics(header: true, label: 'Tab', child: ...)`                                                                                                                                   |
+| `pageTitledGuideline`             | A `Scaffold` with body text, no `AppBar` title and no `namesRoute` node                                                                                                               |
+| `localizationScopeGuideline`      | A tree pumped under a bare `Directionality`, with no `WidgetsApp` or `Localizations`                                                                                                  |
 
 The tests under `test/` hold each of these cases, and a passing one beside it.
 
@@ -151,8 +150,15 @@ The tests under `test/` hold each of these cases, and a passing one beside it.
   a service. A control with a long-press action is released before the
   long-press deadline, so its pressed state is measured part-way into the
   press animation. Disabled controls are not driven, since WCAG exempts
-  inactive components. It settles the page for every state of every control, so its
-  cost grows with the number of controls on the page.
+  inactive components. It steps every vertical scrollable from its start to
+  its end half a viewport at a time, nested ones included where they appear,
+  and settles the page for every state of every control, so its cost grows
+  with the length of the page and the number of controls on it.
+- **Scaled text is measured as painted.** Large text is judged at the
+  smaller of its declared and its painted size: an app
+  that scales text down below the large sizes loses the large-text bar, and a
+  larger text setting, which WCAG's definition of large text excludes, cannot
+  earn it.
 - **Generic words are matched whole.** "Button", "IconButton", "Switch",
   "Toggle", "Checkbox", "Radio" and "Tab" are rejected in any case; "Switch
   accounts" is a real label.
@@ -160,61 +166,47 @@ The tests under `test/` hold each of these cases, and a passing one beside it.
   Android, Fuchsia, Linux and Windows (`flutter_test` defaults to Android), an
   `AppBar` title is flagged `namesRoute`, and `AlertDialog` and `SimpleDialog`
   carry a built-in route announcement ("Alert", "Dialog") that the guideline
-  accepts. On iOS and macOS Flutter flags neither, so see Known issues.
+  accepts. On iOS and macOS Flutter flags neither, so see Limits.
 - **`localizationScopeGuideline` supports WCAG 3.1.1 but does not check it.**
   3.1.1 is about the platform telling assistive technology the content
   language, which happens in the engine, below what a widget test can see. The
   guideline checks the floor under it: a localization scope exists.
 
-## Known issues
+## Limits
 
 These are where the measurement model stops. Each one lets a real violation
 pass, or measures less than the guideline's name suggests, so a page that
 passes is not proven compliant:
 
 - **One background per text element.** The background is the most frequent
-  color around the whole element's box, other than the declared color being
-  measured. Spans of one paragraph drawn over different fills share that one
-  background. Text on a fill of exactly its own color is measured against
-  whatever surrounds the fill. In a `Text.rich`, a short span can be measured
-  against the glyphs of a longer span in another color, and a large
-  translucent graphic against its own composited pixels.
-- **Editable text is measured in its widget style.** An `EditableText` whose
-  controller paints its own spans (a `buildTextSpan` override) is measured in
-  `EditableText.style`, not in the colors it paints.
+  color around the whole element's box that none of its spans declares. Spans
+  of one paragraph drawn over different fills share that one background, and
+  text on a fill of exactly its own color is measured against whatever
+  surrounds the fill: by color alone, the fill cannot be told from the glyphs.
+  A large translucent graphic can likewise be measured against its own
+  composited pixels.
 - **Text is located by its semantics label.** As in the stock guideline, the
   painted text is found with `find.text` on the node's label, so text whose
   semantics label differs from its characters (`Text(semanticsLabel: ...)`), or
-  a node whose label merges several texts, is not measured.
-- **Ancestor opacity is not composited.** The declared color's own alpha is
-  applied; an `Opacity` or `FadeTransition` above the text or graphic is not.
-  For graphics that is deliberate (an entrance animation must not hide a failing
-  color), and for text it means faded text is measured at full strength.
-- **The state walk starts where the page is.** Each vertical scrollable found
-  hit-testable on the first screen is stepped from its current offset down to
-  its end. Controls above a non-zero starting offset, and scrollables that only
-  appear further down, are not driven. A control is driven once, the first time
-  it is on screen.
+  a node whose label merges several texts, is not measured. Text is also paired
+  with its node by where the two are, and a control scrolled partly into view
+  can report a rect that does not reach all of it - seen with a control taller
+  than half the viewport whose label sits in the part that scrolls in later -
+  so text there can go unmeasured, at rest and in every state.
+- **Faded text is measured at full strength.** An `Opacity` or `FadeTransition`
+  above text is not applied: from the pixels alone, the guideline cannot tell
+  whether the fill behind the text is faded with it, which decides what the
+  faded text is measured against. Graphics are measured at their declared
+  color too, deliberately: an entrance animation must not hide a color that
+  fails at rest.
 - **One view.** The guidelines are written for a test with a single
   `FlutterView`; pointers are sent to the default view.
-- **`pageTitledGuideline` reads every node.** A `namesRoute` title satisfies it
-  even when the node is hidden from assistive technology.
 - **Apple platforms.** Under `debugDefaultTargetPlatformOverride` set to iOS
   or macOS, `pageTitledGuideline` fails a standard `AppBar`-titled screen and an
-  untitled dialog, because Flutter does not flag either `namesRoute` there; and
-  `stateContrastGuidelineAAA` drives no focus state, because it finds focusable
-  controls by their semantics focus action, which Flutter omits on iOS.
-- **Authored text scaling.** Large text is judged from the style's `fontSize`.
-  A `textScaler` the app itself sets (not the user's text-size setting) is not
-  applied, so text scaled down below the large-text sizes is still held to the
-  large-text bar.
-- **Nested lazy lists in the state walk.** The scrollables are collected before
-  the walk. Scrolling an outer lazy list can dispose an inner one collected
-  earlier, and the walk then drives the disposed one.
-- **`localizationScopeGuideline` checks one leaf.** It resolves the locale from
-  the last element in depth-first order. In an app pumped under a `WidgetsApp`
-  that leaf is inside the app's scope; a tree that also holds a branch outside
-  any scope can pass or fail by branch order.
+  untitled dialog, because it reads the route name Flutter exposes, and Flutter
+  flags neither `namesRoute` there. `stateContrastGuidelineAAA` drives focus
+  through the semantics focus action, as assistive technology does, and
+  Flutter does not offer that action on iOS, so no focus state is driven there.
 
 ## Requirements
 

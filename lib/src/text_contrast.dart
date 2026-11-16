@@ -5,6 +5,7 @@
 // test code: it runs only inside a widget test, where using it is the intent.
 // ignore_for_file: invalid_use_of_visible_for_testing_member
 
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/rendering.dart';
@@ -182,13 +183,20 @@ class DeclaredColorTextContrastGuidelineAAA extends AccessibilityGuideline {
     }
 
     final List<TextStyle> segments = _paintedSegments(element);
+    // Every span's own color is a glyph color, never the background, so a
+    // short span among a longer one's glyphs is not measured against them.
+    final Set<Color> marks = {
+      for (final TextStyle style in segments)
+        if (style.color case final Color color) color,
+    };
 
     final Map<Color, int> histogram = painted.colorsWithin(sampleBounds);
     if (histogram.isEmpty) return const Evaluation.pass();
 
+    final TextScaler scaler = _paintedScaler(element, renderObject);
     var result = const Evaluation.pass();
     for (final TextStyle style in segments) {
-      result += _evaluateSegment(node, style, histogram);
+      result += _evaluateSegment(node, style, histogram, marks, scaler);
     }
     return result;
   }
@@ -197,6 +205,8 @@ class DeclaredColorTextContrastGuidelineAAA extends AccessibilityGuideline {
     SemanticsNode node,
     TextStyle style,
     Map<Color, int> histogram,
+    Set<Color> marks,
+    TextScaler scaler,
   ) {
     final Color? declared = style.color;
     if (declared == null) {
@@ -208,7 +218,7 @@ class DeclaredColorTextContrastGuidelineAAA extends AccessibilityGuideline {
       );
     }
 
-    final Color? background = backgroundBehind(histogram, declared);
+    final Color? background = backgroundBehind(histogram, marks);
     if (background == null) {
       return Evaluation.fail(
         '$node:\n'
@@ -219,7 +229,7 @@ class DeclaredColorTextContrastGuidelineAAA extends AccessibilityGuideline {
 
     final Color foreground = composited(declared, background);
     final double ratio = contrastRatio(foreground, background);
-    final double target = _isLargeText(style)
+    final double target = _isLargeText(style, scaler)
         ? MinimumTextContrastGuidelineAAA.kAAAMinimumRatioLargeText
         : MinimumTextContrastGuidelineAAA.kAAAMinimumRatioNormalText;
     if (ratio - target >= _tolerance) return const Evaluation.pass();
@@ -236,9 +246,13 @@ class DeclaredColorTextContrastGuidelineAAA extends AccessibilityGuideline {
   }
 
   // A style with no resolved size is measured as normal text, the stricter bar.
-  bool _isLargeText(TextStyle style) {
-    final double? size = style.fontSize;
-    if (size == null) return false;
+  // The size is the smaller of the declared and the painted one: text the app
+  // scales down below the large sizes is not large, and a larger text setting
+  // - which WCAG's definition of large text excludes - cannot make it so.
+  bool _isLargeText(TextStyle style, TextScaler scaler) {
+    final double? declared = style.fontSize;
+    if (declared == null) return false;
+    final double size = math.min(declared, scaler.scale(declared));
     final bool bold = (style.fontWeight?.value ?? 0) >= _boldWeight.value;
     return size >= _largeTextSize || (bold && size >= _largeBoldTextSize);
   }
@@ -259,7 +273,19 @@ class DeclaredColorTextContrastGuidelineAAA extends AccessibilityGuideline {
   // paragraph is held to the large-text bar instead of 7:1.
   List<TextStyle> _paintedSegments(Element element) {
     final Widget widget = element.widget;
-    if (widget is EditableText) return <TextStyle>[widget.style];
+    if (widget is EditableText) {
+      // What a field paints is its RenderEditable's span tree, as the tree
+      // resolves it: a controller's buildTextSpan returns it, and nothing of
+      // the widget's style reaches a span that does not carry it. An
+      // unresolved color fails, and an unresolved size is normal text.
+      final InlineSpan? painted = _descendant<RenderEditable>(
+        element.renderObject,
+      )?.text;
+      if (painted == null) return <TextStyle>[widget.style];
+      final segments = <TextStyle>{};
+      _collectSpanStyles(painted, const TextStyle(), segments);
+      return segments.toList();
+    }
     if (widget is! Text) {
       throw StateError('Unexpected widget type: ${widget.runtimeType}');
     }
@@ -299,5 +325,24 @@ class DeclaredColorTextContrastGuidelineAAA extends AccessibilityGuideline {
     }
     // A PlaceholderSpan contributes no text of its own - the widget it hosts is
     // its own element, found and measured by its own `find.text` match.
+  }
+
+  // The scaler the text was laid out with, as the renderer that paints this
+  // widget's own text holds it - a field's RenderEditable, never a paragraph
+  // inside one of its inline widgets.
+  TextScaler _paintedScaler(Element element, RenderObject renderObject) =>
+      switch (element.widget) {
+        EditableText() => _descendant<RenderEditable>(renderObject)?.textScaler,
+        _ => _descendant<RenderParagraph>(renderObject)?.textScaler,
+      } ??
+      TextScaler.noScaling;
+
+  T? _descendant<T extends RenderObject>(RenderObject? root) {
+    if (root == null || root is T) return root as T?;
+    T? found;
+    root.visitChildren((RenderObject child) {
+      found ??= _descendant<T>(child);
+    });
+    return found;
   }
 }
