@@ -141,6 +141,33 @@ void main() {
       );
     });
 
+    // A branch outside any scope fails wherever the tree puts it; reading
+    // one leaf, the last in depth-first order, missed a branch ordered first.
+    testWidgets('an unscoped branch ordered before a scoped one fails', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: Stack(
+            children: [
+              const Text('outside any scope'),
+              Localizations(
+                locale: const Locale('en'),
+                delegates: const [DefaultWidgetsLocalizations.delegate],
+                child: const Text('localized'),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      await expectLater(
+        tester,
+        doesNotMeetGuideline(localizationScopeGuideline),
+      );
+    });
+
     testWidgets('a MaterialApp tree resolves a locale and passes', (
       tester,
     ) async {
@@ -188,6 +215,22 @@ void main() {
       );
 
       await expectLater(tester, meetsGuideline(pageTitledGuideline));
+    });
+
+    // A hidden node is not announced, so a title only it carries leaves the
+    // page untitled.
+    testWidgets('a hidden namesRoute title fails', (tester) async {
+      await _pump(
+        tester,
+        Semantics(
+          hidden: true,
+          namesRoute: true,
+          label: 'Choose your check-in time',
+          child: const SizedBox(width: 56, height: 56),
+        ),
+      );
+
+      await expectLater(tester, doesNotMeetGuideline(pageTitledGuideline));
     });
 
     // Pins the framework behavior the guideline relies on: the test platform

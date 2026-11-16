@@ -209,36 +209,40 @@ class _LocalizationScopeGuideline extends AccessibilityGuideline {
   @override
   FutureOr<Evaluation> evaluate(WidgetTester tester) {
     // maybeLocaleOf walks *ancestors* of the context it is given, so it has
-    // to be called from a node BELOW the page's Localizations scope - the
-    // Localizations element itself (and its immediate child) sit at or above
-    // the scope and resolve null. The deepest leaf in the tree is a
-    // descendant of every Localizations ancestor, so it resolves the active
-    // content locale; a subtree pumped with no Localizations ancestor at all
-    // leaves the leaf with no scope and the matcher fails - the missing
-    // localization scope this floor guards.
-    Element? deepest;
+    // to be called from below a Localizations scope - the Localizations
+    // element itself sits at the scope and resolves null. Every leaf element
+    // is below every scope that covers it, so each leaf is asked: one branch
+    // pumped outside any scope fails here however the tree orders it.
+    var leaves = 0;
+    Element? unscoped;
     void visit(Element element) {
-      deepest = element;
-      element.visitChildElements(visit);
+      var children = 0;
+      element.visitChildElements((Element child) {
+        children++;
+        visit(child);
+      });
+      if (children > 0) return;
+      leaves++;
+      final Locale? locale = Localizations.maybeLocaleOf(element);
+      if (locale == null || locale.languageCode.trim().isEmpty) {
+        unscoped ??= element;
+      }
     }
 
-    for (final Element root in tester.allElements) {
-      // allElements is depth-first from the root; the first iteration's
-      // subtree walk reaches the deepest descendant of the whole tree.
+    for (final Element root in tester.allElements.take(1)) {
       visit(root);
-      break;
     }
-    if (deepest == null) {
+    if (leaves == 0) {
       return Evaluation.fail(
         'Pumped tree is empty: no element from which to resolve a '
         'localization scope.',
       );
     }
-    final Locale? locale = Localizations.maybeLocaleOf(deepest!);
-    if (locale == null || locale.languageCode.trim().isEmpty) {
+    if (unscoped case final Element leaf) {
       return Evaluation.fail(
-        'No Localizations ancestor resolves a content locale (locale='
-        '$locale): the surface was pumped without a localization scope.',
+        'No Localizations ancestor resolves a content locale for '
+        '${leaf.widget.runtimeType}: part of the surface was pumped without '
+        'a localization scope.',
       );
     }
     return const Evaluation.pass();
@@ -278,6 +282,9 @@ class _PageTitledGuideline extends AccessibilityGuideline {
     // like the localization-scope floor - so a title that folded into a
     // parent (an AppBar title merged into the toolbar node) is still found:
     // it is announced wherever the namesRoute flag and label land.
+    // A hidden or invisible node is not announced, and neither is anything
+    // below it, so it cannot title the page.
+    if (node.isInvisible || node.flagsCollection.isHidden) return false;
     final SemanticsData data = node.getSemanticsData();
     final String label = data.label.trim();
     if (data.flagsCollection.namesRoute &&
