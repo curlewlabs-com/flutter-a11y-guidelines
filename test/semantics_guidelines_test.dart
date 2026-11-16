@@ -143,30 +143,40 @@ void main() {
 
     // A branch outside any scope fails wherever the tree puts it; reading
     // one leaf, the last in depth-first order, missed a branch ordered first.
-    testWidgets('an unscoped branch ordered before a scoped one fails', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        Directionality(
-          textDirection: TextDirection.ltr,
-          child: Stack(
-            children: [
-              const Text('outside any scope'),
-              Localizations(
-                locale: const Locale('en'),
-                delegates: const [DefaultWidgetsLocalizations.delegate],
-                child: const Text('localized'),
-              ),
-            ],
-          ),
-        ),
-      );
-
-      await expectLater(
+    // The twin scopes that branch too, and passes.
+    for (final scoped in [false, true]) {
+      testWidgets('a branch ordered before a scoped one '
+          '${scoped ? 'passes when scoped' : 'fails unscoped'}', (
         tester,
-        doesNotMeetGuideline(localizationScopeGuideline),
-      );
-    });
+      ) async {
+        Widget localized(Widget child) => Localizations(
+          locale: const Locale('en'),
+          delegates: const [DefaultWidgetsLocalizations.delegate],
+          child: child,
+        );
+        await tester.pumpWidget(
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: Stack(
+              children: [
+                if (scoped)
+                  localized(const Text('first branch'))
+                else
+                  const Text('first branch'),
+                localized(const Text('localized')),
+              ],
+            ),
+          ),
+        );
+
+        await expectLater(
+          tester,
+          scoped
+              ? meetsGuideline(localizationScopeGuideline)
+              : doesNotMeetGuideline(localizationScopeGuideline),
+        );
+      });
+    }
 
     testWidgets('a MaterialApp tree resolves a locale and passes', (
       tester,
@@ -218,20 +228,31 @@ void main() {
     });
 
     // A hidden node is not announced, so a title only it carries leaves the
-    // page untitled.
-    testWidgets('a hidden namesRoute title fails', (tester) async {
-      await _pump(
-        tester,
-        Semantics(
-          hidden: true,
-          namesRoute: true,
-          label: 'Choose your check-in time',
-          child: const SizedBox(width: 56, height: 56),
-        ),
-      );
+    // page untitled. The twin is the same title, visible, and passes.
+    for (final hidden in [true, false]) {
+      testWidgets(
+        'a namesRoute title ${hidden ? 'fails hidden' : 'passes '
+                  'visible'}',
+        (tester) async {
+          await _pump(
+            tester,
+            Semantics(
+              hidden: hidden,
+              namesRoute: true,
+              label: 'Choose your check-in time',
+              child: const SizedBox(width: 56, height: 56),
+            ),
+          );
 
-      await expectLater(tester, doesNotMeetGuideline(pageTitledGuideline));
-    });
+          await expectLater(
+            tester,
+            hidden
+                ? doesNotMeetGuideline(pageTitledGuideline)
+                : meetsGuideline(pageTitledGuideline),
+          );
+        },
+      );
+    }
 
     // Pins the framework behavior the guideline relies on: the test platform
     // flags an AppBar title namesRoute. If a Flutter release stopped doing

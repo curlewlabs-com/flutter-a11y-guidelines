@@ -193,7 +193,7 @@ class DeclaredColorTextContrastGuidelineAAA extends AccessibilityGuideline {
     final Map<Color, int> histogram = painted.colorsWithin(sampleBounds);
     if (histogram.isEmpty) return const Evaluation.pass();
 
-    final TextScaler scaler = _paintedScaler(renderObject);
+    final TextScaler scaler = _paintedScaler(element, renderObject);
     var result = const Evaluation.pass();
     for (final TextStyle style in segments) {
       result += _evaluateSegment(node, style, histogram, marks, scaler);
@@ -274,14 +274,16 @@ class DeclaredColorTextContrastGuidelineAAA extends AccessibilityGuideline {
   List<TextStyle> _paintedSegments(Element element) {
     final Widget widget = element.widget;
     if (widget is EditableText) {
-      // What a field paints is its RenderEditable's span tree, which a
-      // controller's buildTextSpan can style apart from the widget's style.
+      // What a field paints is its RenderEditable's span tree, as the tree
+      // resolves it: a controller's buildTextSpan returns it, and nothing of
+      // the widget's style reaches a span that does not carry it. An
+      // unresolved color fails, and an unresolved size is normal text.
       final InlineSpan? painted = _descendant<RenderEditable>(
         element.renderObject,
       )?.text;
       if (painted == null) return <TextStyle>[widget.style];
       final segments = <TextStyle>{};
-      _collectSpanStyles(painted, widget.style, segments);
+      _collectSpanStyles(painted, const TextStyle(), segments);
       return segments.toList();
     }
     if (widget is! Text) {
@@ -325,10 +327,14 @@ class DeclaredColorTextContrastGuidelineAAA extends AccessibilityGuideline {
     // its own element, found and measured by its own `find.text` match.
   }
 
-  // The scaler the text was laid out with, as its render object holds it.
-  TextScaler _paintedScaler(RenderObject renderObject) =>
-      _descendant<RenderParagraph>(renderObject)?.textScaler ??
-      _descendant<RenderEditable>(renderObject)?.textScaler ??
+  // The scaler the text was laid out with, as the renderer that paints this
+  // widget's own text holds it - a field's RenderEditable, never a paragraph
+  // inside one of its inline widgets.
+  TextScaler _paintedScaler(Element element, RenderObject renderObject) =>
+      switch (element.widget) {
+        EditableText() => _descendant<RenderEditable>(renderObject)?.textScaler,
+        _ => _descendant<RenderParagraph>(renderObject)?.textScaler,
+      } ??
       TextScaler.noScaling;
 
   T? _descendant<T extends RenderObject>(RenderObject? root) {

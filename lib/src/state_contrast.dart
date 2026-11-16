@@ -105,14 +105,14 @@ class StateContrastGuidelineAAA extends AccessibilityGuideline {
 
   Future<Evaluation> _walk(WidgetTester tester) async {
     final driven = <String>{};
-    final walked = <(ScrollableState, int)>{};
+    final walked = <(ScrollableState, Rect)>{};
     var result = await _measureOnScreen(tester, driven);
     result += await _walkNewScrollables(tester, driven, walked);
     return result;
   }
 
   // Walks every vertical scrollable the pointer can reach now that has not
-  // been walked at its current visible height, each while it exists. Called
+  // been walked with its current part in view, each while it exists. Called
   // again at every position a walk reaches, so a scrollable that only appears
   // further down, or inside a lazy list that will dispose it once scrolled
   // past, is walked where it is - and one an ancestor clipped is walked again
@@ -120,14 +120,14 @@ class StateContrastGuidelineAAA extends AccessibilityGuideline {
   Future<Evaluation> _walkNewScrollables(
     WidgetTester tester,
     Set<String> driven,
-    Set<(ScrollableState, int)> walked,
+    Set<(ScrollableState, Rect)> walked,
   ) async {
     var result = const Evaluation.pass();
     while (true) {
-      final (ScrollableState, int)? next = tester
+      final (ScrollableState, Rect)? next = tester
           .stateList<ScrollableState>(find.byType(Scrollable).hitTestable())
           .where((s) => s.mounted && s.position.axis == Axis.vertical)
-          .map((s) => (s, _visibleHeight(tester, s)))
+          .map((s) => (s, _visiblePart(tester, s)))
           .where((key) => !walked.contains(key))
           .firstOrNull;
       if (next == null) return result;
@@ -136,18 +136,34 @@ class StateContrastGuidelineAAA extends AccessibilityGuideline {
     }
   }
 
-  // How much of [scrollable]'s viewport the test's view shows, in whole
-  // logical pixels.
-  int _visibleHeight(WidgetTester tester, ScrollableState scrollable) {
+  // The part of [scrollable]'s box in view, in its own coordinates rounded to
+  // whole logical pixels: its box clipped by the test's view and by every
+  // viewport above it.
+  Rect _visiblePart(WidgetTester tester, ScrollableState scrollable) {
     final RenderObject? box = scrollable.context.findRenderObject();
-    if (box is! RenderBox || !box.hasSize) return 0;
-    final Rect global = MatrixUtils.transformRect(
-      box.getTransformTo(null),
-      Offset.zero & box.size,
+    if (box is! RenderBox || !box.hasSize) return Rect.zero;
+    Rect global(RenderBox of) => MatrixUtils.transformRect(
+      of.getTransformTo(null),
+      Offset.zero & of.size,
     );
-    final Size view = tester.view.physicalSize / tester.view.devicePixelRatio;
-    final Rect visible = global.intersect(Offset.zero & view);
-    return visible.isEmpty ? 0 : visible.height.round();
+    final Rect own = global(box);
+    var visible = own.intersect(
+      Offset.zero & (tester.view.physicalSize / tester.view.devicePixelRatio),
+    );
+    for (RenderObject? up = box.parent; up != null; up = up.parent) {
+      if (up case final RenderBox viewport
+          when up is RenderAbstractViewport && viewport.hasSize) {
+        visible = visible.intersect(global(viewport));
+      }
+    }
+    if (visible.isEmpty) return Rect.zero;
+    final Rect local = visible.shift(-own.topLeft);
+    return Rect.fromLTRB(
+      local.left.roundToDouble(),
+      local.top.roundToDouble(),
+      local.right.roundToDouble(),
+      local.bottom.roundToDouble(),
+    );
   }
 
   // Steps [scrollable] from its start to its end half a viewport at a time,
@@ -156,7 +172,7 @@ class StateContrastGuidelineAAA extends AccessibilityGuideline {
     WidgetTester tester,
     ScrollableState scrollable,
     Set<String> driven,
-    Set<(ScrollableState, int)> walked,
+    Set<(ScrollableState, Rect)> walked,
   ) async {
     var result = const Evaluation.pass();
     final ScrollPosition position = scrollable.position;
