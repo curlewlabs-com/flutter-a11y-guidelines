@@ -241,6 +241,161 @@ void main() {
     );
     await expectLater(tester, meetsGuideline(exemptAll));
   });
+
+  // The walk starts each scrollable at its beginning, not where the page
+  // opened it, so a control above the opening offset is still driven.
+  testWidgets('reaches a control above where the list opens', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          backgroundColor: _surface,
+          body: ListView(
+            controller: ScrollController(initialScrollOffset: 1400),
+            children: [
+              Center(child: _inkOnlyFailsIn(WidgetState.hovered)),
+              const SizedBox(height: 2000),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final Evaluation evaluation = await stateContrastGuidelineAAA.evaluate(
+      tester,
+    );
+    expect(evaluation.passed, isFalse);
+    expect(evaluation.reason, contains('While hovering "Edit time"'));
+  });
+
+  // A nested list that only comes into view further down is walked where it
+  // appears; collected up front, it was never seen.
+  testWidgets('reaches a control in a nested list below the fold', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          backgroundColor: _surface,
+          body: ListView(
+            children: [
+              const SizedBox(height: 900),
+              SizedBox(
+                height: 300,
+                child: ListView(
+                  children: [
+                    const SizedBox(height: 700),
+                    Center(child: _inkOnlyFailsIn(WidgetState.hovered)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final Evaluation evaluation = await stateContrastGuidelineAAA.evaluate(
+      tester,
+    );
+    expect(evaluation.passed, isFalse);
+    expect(evaluation.reason, contains('While hovering "Edit time"'));
+  });
+
+  // Scrolling a lazy outer list disposes the nested lists it scrolls past;
+  // driving a disposed one threw instead of measuring.
+  testWidgets('walks nested lazy lists without driving a disposed one', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          backgroundColor: _surface,
+          body: ListView.builder(
+            itemCount: 40,
+            itemBuilder: (context, index) => index == 0
+                ? SizedBox(
+                    height: 200,
+                    child: ListView(
+                      children: [
+                        for (var j = 0; j < 6; j++)
+                          Center(
+                            child: TextButton(
+                              style: ButtonStyle(
+                                foregroundColor: WidgetStateProperty.all(
+                                  _restInk,
+                                ),
+                                overlayColor: WidgetStateProperty.all(
+                                  Colors.transparent,
+                                ),
+                              ),
+                              onPressed: () {},
+                              child: Text('inner $j'),
+                            ),
+                          ),
+                      ],
+                    ),
+                  )
+                : SizedBox(
+                    height: 120,
+                    child: Text(
+                      'row $index',
+                      style: const TextStyle(color: _restInk),
+                    ),
+                  ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await expectLater(tester, meetsGuideline(stateContrastGuidelineAAA));
+  });
+
+  // A tall control whose centre is on screen while its label is still below
+  // the fold takes a pointer, but its label cannot be measured yet. It is
+  // driven again once a step brings all of it into view.
+  testWidgets('drives again a control first seen partly outside the view', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          backgroundColor: _surface,
+          body: ListView(
+            children: [
+              const SizedBox(height: 400),
+              Center(
+                child: TextButton(
+                  style: ButtonStyle(
+                    minimumSize: WidgetStateProperty.all(const Size(200, 300)),
+                    alignment: Alignment.bottomCenter,
+                    foregroundColor: WidgetStateProperty.resolveWith(
+                      (states) => states.contains(WidgetState.hovered)
+                          ? _failingInk
+                          : _restInk,
+                    ),
+                    overlayColor: WidgetStateProperty.all(Colors.transparent),
+                  ),
+                  onPressed: () {},
+                  child: const Text('Edit time'),
+                ),
+              ),
+              const SizedBox(height: 1200),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final Evaluation evaluation = await stateContrastGuidelineAAA.evaluate(
+      tester,
+    );
+    expect(evaluation.passed, isFalse);
+    expect(evaluation.reason, contains('While hovering "Edit time"'));
+  });
 }
 
 bool _always(Element element) => true;
