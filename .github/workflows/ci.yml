@@ -41,8 +41,11 @@ jobs:
           echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
       - name: Flutter version
         run: flutter --version
+      # No lock is committed, as for any library. Beyond what the pinned
+      # Flutter pins, it resolves flutter_lints, pinned exactly, and the lints
+      # release flutter_lints' own range admits.
       - name: Resolve packages
-        run: flutter pub get --enforce-lockfile
+        run: flutter pub get
       - name: Format
         run: dart format --output=none --set-exit-if-changed .
       - name: Analyze
@@ -64,3 +67,16 @@ jobs:
           # renovate: datasource=github-releases depName=rhysd/actionlint extractVersion=^v(?<version>.+)$
           bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/914e7df21a07ef503a81201c76d2b11c789d3fca/scripts/download-actionlint.bash) 1.7.12
           ./actionlint -color
+
+  # The one check branch protection requires, so a job added above is covered
+  # by adding it here.
+  conclusion:
+    needs: [test, actionlint]
+    runs-on: ubuntu-24.04
+    if: always()
+    steps:
+      - name: Require every job to pass
+        env:
+          TEST: ${{ needs.test.result }}
+          ACTIONLINT: ${{ needs.actionlint.result }}
+        run: test "$TEST" = success && test "$ACTIONLINT" = success

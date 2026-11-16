@@ -156,15 +156,17 @@ The tests under `test/` hold each of these cases, and a passing one beside it.
 - **Generic words are matched whole.** "Button", "IconButton", "Switch",
   "Toggle", "Checkbox", "Radio" and "Tab" are rejected in any case; "Switch
   accounts" is a real label.
-- **Modal routes pass `pageTitledGuideline` without a title of their own.**
-  Flutter gives every dialog and sheet a route announcement ("Dialog",
-  "Alert"), and screen-reader users expect it.
+- **What satisfies `pageTitledGuideline` depends on the target platform.** On
+  Android, Fuchsia, Linux and Windows (`flutter_test` defaults to Android), an
+  `AppBar` title is flagged `namesRoute`, and `AlertDialog` and `SimpleDialog`
+  carry a built-in route announcement ("Alert", "Dialog") that the guideline
+  accepts. On iOS and macOS Flutter flags neither, so see Known issues.
 - **`localizationScopeGuideline` supports WCAG 3.1.1 but does not check it.**
   3.1.1 is about the platform telling assistive technology the content
   language, which happens in the engine, below what a widget test can see. The
   guideline checks the floor under it: a localization scope exists.
 
-## Known limits
+## Known issues
 
 These are where the measurement model stops. Each one lets a real violation
 pass, or measures less than the guideline's name suggests, so a page that
@@ -192,6 +194,18 @@ passes is not proven compliant:
   `FlutterView`; pointers are sent to the default view.
 - **`pageTitledGuideline` reads every node.** A `namesRoute` title satisfies it
   even when the node is hidden from assistive technology.
+- **Apple platforms.** Under `debugDefaultTargetPlatformOverride` set to iOS
+  or macOS, `pageTitledGuideline` fails a standard `AppBar`-titled screen and an
+  untitled dialog, because Flutter does not flag either `namesRoute` there; and
+  `stateContrastGuidelineAAA` drives no focus state, because it finds focusable
+  controls by their semantics focus action, which Flutter omits on iOS.
+- **Authored text scaling.** Large text is judged from the style's `fontSize`.
+  A `textScaler` the app itself sets (not the user's text-size setting) is not
+  applied, so text scaled down below the large-text sizes is still held to the
+  large-text bar.
+- **Nested lazy lists in the state walk.** The scrollables are collected before
+  the walk. Scrolling an outer lazy list can dispose an inner one collected
+  earlier, and the walk then drives the disposed one.
 - **`localizationScopeGuideline` checks one leaf.** It resolves the locale from
   the last element in depth-first order. In an app pumped under a `WidgetsApp`
   that leaf is inside the app's scope; a tree that also holds a branch outside

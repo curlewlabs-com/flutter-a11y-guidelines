@@ -45,14 +45,17 @@ const AccessibilityGuideline localizationScopeGuideline =
 /// `namesRoute` - the title assistive technology announces on a route change -
 /// whose label is not a bare control-type token.
 ///
-/// The framework adds a `namesRoute` node only for routes, so a screen with no
-/// `AppBar` title fails until it supplies one: an `AppBar` title, or an
-/// explicit `Semantics(header: true, namesRoute: true)` around its headline.
+/// What supplies that node depends on the target platform. On Android,
+/// Fuchsia, Linux and Windows (`flutter_test` defaults to Android), an `AppBar`
+/// title is flagged `namesRoute`, and `AlertDialog` and `SimpleDialog` carry a
+/// built-in announcement ("Alert", "Dialog") that this guideline accepts, so a
+/// dialog need not invent a title of its own. On iOS and macOS Flutter flags
+/// neither, so a test run under an Apple platform override fails unless the
+/// screen or dialog wraps its title in `Semantics(namesRoute: true)` itself.
 ///
-/// Modal routes are not held to a bespoke title. Flutter gives every modal
-/// route a built-in `namesRoute` announcement ("Dialog", "Alert"), the
-/// platform-standard modal semantics a screen-reader user expects, read
-/// together with the dialog's content, and this guideline accepts it.
+/// A screen with neither fails until it supplies one: an `AppBar` title where
+/// the platform flags it, or an explicit `Semantics(header: true, namesRoute:
+/// true)` around its headline.
 const AccessibilityGuideline pageTitledGuideline = _PageTitledGuideline();
 
 // Generic widget-type tokens that read as useless when a screen reader
@@ -265,8 +268,8 @@ class _PageTitledGuideline extends AccessibilityGuideline {
       'No semantics node in the pumped tree is flagged namesRoute with a '
       'descriptive label: the surface exposes no page title for assistive '
       'technology to announce on navigation. Give the screen an AppBar '
-      'title, or wrap its headline in '
-      'Semantics(header: true, namesRoute: true).',
+      'title (flagged namesRoute on Android, Fuchsia, Linux and Windows), '
+      'or wrap its headline in Semantics(header: true, namesRoute: true).',
     );
   }
 
