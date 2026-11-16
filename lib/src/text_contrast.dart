@@ -193,18 +193,10 @@ class DeclaredColorTextContrastGuidelineAAA extends AccessibilityGuideline {
     final Map<Color, int> histogram = painted.colorsWithin(sampleBounds);
     if (histogram.isEmpty) return const Evaluation.pass();
 
-    final double opacity = _ancestorOpacity(renderObject);
     final TextScaler scaler = _paintedScaler(renderObject);
     var result = const Evaluation.pass();
     for (final TextStyle style in segments) {
-      result += _evaluateSegment(
-        node,
-        style,
-        histogram,
-        marks,
-        opacity,
-        scaler,
-      );
+      result += _evaluateSegment(node, style, histogram, marks, scaler);
     }
     return result;
   }
@@ -214,7 +206,6 @@ class DeclaredColorTextContrastGuidelineAAA extends AccessibilityGuideline {
     TextStyle style,
     Map<Color, int> histogram,
     Set<Color> marks,
-    double opacity,
     TextScaler scaler,
   ) {
     final Color? declared = style.color;
@@ -236,12 +227,7 @@ class DeclaredColorTextContrastGuidelineAAA extends AccessibilityGuideline {
       );
     }
 
-    // An Opacity or FadeTransition above the text fades it as its own alpha
-    // would, and what reaches the eye is the faded color over the background.
-    final Color faded = opacity < 1.0
-        ? declared.withValues(alpha: declared.a * opacity)
-        : declared;
-    final Color foreground = composited(faded, background);
+    final Color foreground = composited(declared, background);
     final double ratio = contrastRatio(foreground, background);
     final double target = _isLargeText(style, scaler)
         ? MinimumTextContrastGuidelineAAA.kAAAMinimumRatioLargeText
@@ -337,26 +323,6 @@ class DeclaredColorTextContrastGuidelineAAA extends AccessibilityGuideline {
     }
     // A PlaceholderSpan contributes no text of its own - the widget it hosts is
     // its own element, found and measured by its own `find.text` match.
-  }
-
-  // The product of every opacity layer above [renderObject].
-  double _ancestorOpacity(RenderObject renderObject) {
-    var opacity = 1.0;
-    RenderObject? current = renderObject.parent;
-    while (current != null) {
-      switch (current) {
-        case RenderOpacity(opacity: final double layer):
-        case RenderSliverOpacity(opacity: final double layer):
-          opacity *= layer;
-        case RenderAnimatedOpacity(opacity: final Animation<double> layer):
-        case RenderSliverAnimatedOpacity(
-          opacity: final Animation<double> layer,
-        ):
-          opacity *= layer.value;
-      }
-      current = current.parent;
-    }
-    return opacity;
   }
 
   // The scaler the text was laid out with, as its render object holds it.

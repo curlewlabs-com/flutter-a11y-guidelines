@@ -105,36 +105,49 @@ class StateContrastGuidelineAAA extends AccessibilityGuideline {
 
   Future<Evaluation> _walk(WidgetTester tester) async {
     final driven = <String>{};
-    final walked = <ScrollableState>{};
+    final walked = <(ScrollableState, int)>{};
     var result = await _measureOnScreen(tester, driven);
     result += await _walkNewScrollables(tester, driven, walked);
     return result;
   }
 
   // Walks every vertical scrollable the pointer can reach now that has not
-  // been walked, each while it exists. Called again at every position a walk
-  // reaches, so a scrollable that only appears further down, or inside a lazy
-  // list that will dispose it once scrolled past, is walked where it is.
+  // been walked at its current visible height, each while it exists. Called
+  // again at every position a walk reaches, so a scrollable that only appears
+  // further down, or inside a lazy list that will dispose it once scrolled
+  // past, is walked where it is - and one an ancestor clipped is walked again
+  // once more of it is in view, since its end could not be reached before.
   Future<Evaluation> _walkNewScrollables(
     WidgetTester tester,
     Set<String> driven,
-    Set<ScrollableState> walked,
+    Set<(ScrollableState, int)> walked,
   ) async {
     var result = const Evaluation.pass();
     while (true) {
-      final ScrollableState? next = tester
+      final (ScrollableState, int)? next = tester
           .stateList<ScrollableState>(find.byType(Scrollable).hitTestable())
-          .where(
-            (s) =>
-                s.mounted &&
-                s.position.axis == Axis.vertical &&
-                !walked.contains(s),
-          )
+          .where((s) => s.mounted && s.position.axis == Axis.vertical)
+          .map((s) => (s, _visibleHeight(tester, s)))
+          .where((key) => !walked.contains(key))
           .firstOrNull;
       if (next == null) return result;
       walked.add(next);
-      result += await _walkScrollable(tester, next, driven, walked);
+      result += await _walkScrollable(tester, next.$1, driven, walked);
     }
+  }
+
+  // How much of [scrollable]'s viewport the test's view shows, in whole
+  // logical pixels.
+  int _visibleHeight(WidgetTester tester, ScrollableState scrollable) {
+    final RenderObject? box = scrollable.context.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return 0;
+    final Rect global = MatrixUtils.transformRect(
+      box.getTransformTo(null),
+      Offset.zero & box.size,
+    );
+    final Size view = tester.view.physicalSize / tester.view.devicePixelRatio;
+    final Rect visible = global.intersect(Offset.zero & view);
+    return visible.isEmpty ? 0 : visible.height.round();
   }
 
   // Steps [scrollable] from its start to its end half a viewport at a time,
@@ -143,7 +156,7 @@ class StateContrastGuidelineAAA extends AccessibilityGuideline {
     WidgetTester tester,
     ScrollableState scrollable,
     Set<String> driven,
-    Set<ScrollableState> walked,
+    Set<(ScrollableState, int)> walked,
   ) async {
     var result = const Evaluation.pass();
     final ScrollPosition position = scrollable.position;
@@ -188,11 +201,12 @@ class StateContrastGuidelineAAA extends AccessibilityGuideline {
     return result;
   }
 
-  // [driven] holds each control already measured, by semantics id and by the
-  // size of the part of it in view, so a control still on screen after a
-  // scroll step is not driven twice. Semantics clips a node to the viewport,
-  // so a control only partly in view has a smaller rect, and it is driven
-  // again as a step brings more of it - and its text - into view. A control
+  // [driven] holds each control already measured, by semantics id and by
+  // which part of it is in view, so a control still on screen after a scroll
+  // step is not driven twice. Semantics clips a node's rect to what is in
+  // view and re-bases it, so the part in view is told by the rect's size and
+  // by which edges of the view cut it: a control is driven again whenever a
+  // step shows another part of it - and its text. A control
   // that scrolled out, was rebuilt under a new id, and comes back on screen is
   // driven again, which costs time and misses nothing.
   Future<Evaluation> _measureOnScreen(
@@ -315,7 +329,9 @@ class StateContrastGuidelineAAA extends AccessibilityGuideline {
             tappable: tappable,
             key:
                 '${node.id}:${logical.width.round()}x'
-                '${logical.height.round()}',
+                '${logical.height.round()}:'
+                '${logical.top <= view.top + 0.5 ? 'top' : ''}'
+                '${logical.bottom >= view.bottom - 0.5 ? 'bottom' : ''}',
             longPressable: data.hasAction(SemanticsAction.longPress),
             focusable: focusable,
           ),

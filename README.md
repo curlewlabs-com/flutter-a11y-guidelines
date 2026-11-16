@@ -124,15 +124,15 @@ that is not the mark's own as the background.
 
 ## What each guideline rejects
 
-| Guideline                         | A widget it rejects                                                                     |
-| --------------------------------- | --------------------------------------------------------------------------------------- |
-| `textContrastGuidelineAAA`        | `Text('Hi', style: TextStyle(color: Color(0xFF6E6E6E), fontSize: 14))` on white (5.1:1) |
+| Guideline                         | A widget it rejects                                                                                                                                                                   |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `textContrastGuidelineAAA`        | `Text('Hi', style: TextStyle(color: Color(0xFF6E6E6E), fontSize: 14))` on white (5.1:1)                                                                                               |
 | `stateContrastGuidelineAAA`       | `TextButton(style: TextButton.styleFrom(foregroundColor: Color(0xFF244A6A)), ...)` on `Color(0xFFECE4D5)`: passes at rest; its hover, press and focus overlays each take it under 7:1 |
-| `GraphicContrastGuideline<T>`     | A 10px `T` filled `Color(0xFFCFE0CF)` on white (1.38:1)                                 |
-| `explicitSemanticsLabelGuideline` | `Semantics(button: true, label: 'Button', child: GestureDetector(onTap: ...))`          |
-| `headingLabelQualityGuideline`    | `Semantics(header: true, label: 'Tab', child: ...)`                                     |
-| `pageTitledGuideline`             | A `Scaffold` with body text, no `AppBar` title and no `namesRoute` node                 |
-| `localizationScopeGuideline`      | A tree pumped under a bare `Directionality`, with no `WidgetsApp` or `Localizations`    |
+| `GraphicContrastGuideline<T>`     | A 10px `T` filled `Color(0xFFCFE0CF)` on white (1.38:1)                                                                                                                               |
+| `explicitSemanticsLabelGuideline` | `Semantics(button: true, label: 'Button', child: GestureDetector(onTap: ...))`                                                                                                        |
+| `headingLabelQualityGuideline`    | `Semantics(header: true, label: 'Tab', child: ...)`                                                                                                                                   |
+| `pageTitledGuideline`             | A `Scaffold` with body text, no `AppBar` title and no `namesRoute` node                                                                                                               |
+| `localizationScopeGuideline`      | A tree pumped under a bare `Directionality`, with no `WidgetsApp` or `Localizations`                                                                                                  |
 
 The tests under `test/` hold each of these cases, and a passing one beside it.
 
@@ -154,9 +154,8 @@ The tests under `test/` hold each of these cases, and a passing one beside it.
   its end half a viewport at a time, nested ones included where they appear,
   and settles the page for every state of every control, so its cost grows
   with the length of the page and the number of controls on it.
-- **Faded and scaled text are measured as painted.** An `Opacity` or
-  `FadeTransition` above text fades its color in the measurement too, and large
-  text is judged at the smaller of its declared and its painted size: an app
+- **Scaled text is measured as painted.** Large text is judged at the
+  smaller of its declared and its painted size: an app
   that scales text down below the large sizes loses the large-text bar, and a
   larger text setting, which WCAG's definition of large text excludes, cannot
   earn it.
@@ -189,10 +188,17 @@ passes is not proven compliant:
 - **Text is located by its semantics label.** As in the stock guideline, the
   painted text is found with `find.text` on the node's label, so text whose
   semantics label differs from its characters (`Text(semanticsLabel: ...)`), or
-  a node whose label merges several texts, is not measured.
-- **Graphics are measured at their declared color.** An `Opacity` or
-  `FadeTransition` above a graphic is not applied, deliberately: an entrance
-  animation must not hide a color that fails at rest.
+  a node whose label merges several texts, is not measured. Text is also paired
+  with its node by where the two are, and a control scrolled partly into view
+  can report a rect that does not reach all of it - seen with a control taller
+  than half the viewport whose label sits in the part that scrolls in later -
+  so text there can go unmeasured, at rest and in every state.
+- **Faded text is measured at full strength.** An `Opacity` or `FadeTransition`
+  above text is not applied: from the pixels alone, the guideline cannot tell
+  whether the fill behind the text is faded with it, which decides what the
+  faded text is measured against. Graphics are measured at their declared
+  color too, deliberately: an entrance animation must not hide a color that
+  fails at rest.
 - **One view.** The guidelines are written for a test with a single
   `FlutterView`; pointers are sent to the default view.
 - **Apple platforms.** Under `debugDefaultTargetPlatformOverride` set to iOS

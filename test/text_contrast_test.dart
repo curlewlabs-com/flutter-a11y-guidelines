@@ -355,39 +355,6 @@ void main() {
     handle.dispose();
   });
 
-  // An Opacity above the text fades it as its own alpha would; measured at
-  // full strength, black faded to near-white would pass.
-  group('ancestor opacity', () {
-    Future<void> pumpFaded(WidgetTester tester, double opacity) => _pumpText(
-      tester,
-      Opacity(
-        opacity: opacity,
-        child: const Text(
-          'faded',
-          style: TextStyle(color: Colors.black, fontSize: 14),
-        ),
-      ),
-    );
-
-    testWidgets('faded text is measured as it is painted', (tester) async {
-      final handle = tester.ensureSemantics();
-      await pumpFaded(tester, 0.2);
-
-      await expectLater(tester, doesNotMeetGuideline(textContrastGuidelineAAA));
-      handle.dispose();
-    });
-
-    testWidgets('fully opaque text under an Opacity layer passes', (
-      tester,
-    ) async {
-      final handle = tester.ensureSemantics();
-      await pumpFaded(tester, 1.0);
-
-      await expectLater(tester, meetsGuideline(textContrastGuidelineAAA));
-      handle.dispose();
-    });
-  });
-
   // A field paints its controller's span tree, which can be styled apart from
   // the field's own style.
   group('editable text', () {

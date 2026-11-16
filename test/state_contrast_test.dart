@@ -396,6 +396,42 @@ void main() {
     expect(evaluation.passed, isFalse);
     expect(evaluation.reason, contains('While hovering "Edit time"'));
   });
+
+  // A nested list the outer viewport clips cannot show its end at any offset
+  // of its own; once the outer walk reveals all of it, it is walked again.
+  testWidgets('walks a clipped nested list again once it is in full view', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          backgroundColor: _surface,
+          body: ListView(
+            children: [
+              const SizedBox(height: 400),
+              SizedBox(
+                height: 300,
+                child: ListView(
+                  children: [
+                    const SizedBox(height: 540),
+                    Center(child: _inkOnlyFailsIn(WidgetState.hovered)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 600),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final Evaluation evaluation = await stateContrastGuidelineAAA.evaluate(
+      tester,
+    );
+    expect(evaluation.passed, isFalse);
+    expect(evaluation.reason, contains('While hovering "Edit time"'));
+  });
 }
 
 bool _always(Element element) => true;

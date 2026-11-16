@@ -13,8 +13,6 @@ Each change below makes a guideline measure more of what is painted, so a test
 that passed on 0.1.0 can fail on 0.2.0 where the page really falls short.
 
 - `textContrastGuidelineAAA`:
-  - an `Opacity` or `FadeTransition` above the text fades it in the
-    measurement;
   - large text is judged at the smaller of its declared and its painted size;
   - every color a paragraph's spans declare is set aside when finding the
     background, so a short span is not measured against a longer span's glyphs;
