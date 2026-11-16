@@ -31,7 +31,7 @@ jobs:
       - name: Install Flutter
         env:
           # renovate: datasource=flutter-version depName=flutter
-          FLUTTER_VERSION: 3.47.8
+          FLUTTER_VERSION: 3.47.9
         # A shallow clone of the release tag, rather than a setup action: one
         # fewer third-party action, and the tool downloads its own engine
         # artifacts on first run.
