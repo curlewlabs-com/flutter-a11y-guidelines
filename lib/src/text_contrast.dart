@@ -5,6 +5,7 @@
 // test code: it runs only inside a widget test, where using it is the intent.
 // ignore_for_file: invalid_use_of_visible_for_testing_member
 
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/rendering.dart';
@@ -182,13 +183,28 @@ class DeclaredColorTextContrastGuidelineAAA extends AccessibilityGuideline {
     }
 
     final List<TextStyle> segments = _paintedSegments(element);
+    // Every span's own color is a glyph color, never the background, so a
+    // short span among a longer one's glyphs is not measured against them.
+    final Set<Color> marks = {
+      for (final TextStyle style in segments)
+        if (style.color case final Color color) color,
+    };
 
     final Map<Color, int> histogram = painted.colorsWithin(sampleBounds);
     if (histogram.isEmpty) return const Evaluation.pass();
 
+    final double opacity = _ancestorOpacity(renderObject);
+    final TextScaler scaler = _paintedScaler(renderObject);
     var result = const Evaluation.pass();
     for (final TextStyle style in segments) {
-      result += _evaluateSegment(node, style, histogram);
+      result += _evaluateSegment(
+        node,
+        style,
+        histogram,
+        marks,
+        opacity,
+        scaler,
+      );
     }
     return result;
   }
@@ -197,6 +213,9 @@ class DeclaredColorTextContrastGuidelineAAA extends AccessibilityGuideline {
     SemanticsNode node,
     TextStyle style,
     Map<Color, int> histogram,
+    Set<Color> marks,
+    double opacity,
+    TextScaler scaler,
   ) {
     final Color? declared = style.color;
     if (declared == null) {
@@ -208,7 +227,7 @@ class DeclaredColorTextContrastGuidelineAAA extends AccessibilityGuideline {
       );
     }
 
-    final Color? background = backgroundBehind(histogram, declared);
+    final Color? background = backgroundBehind(histogram, marks);
     if (background == null) {
       return Evaluation.fail(
         '$node:\n'
@@ -217,9 +236,14 @@ class DeclaredColorTextContrastGuidelineAAA extends AccessibilityGuideline {
       );
     }
 
-    final Color foreground = composited(declared, background);
+    // An Opacity or FadeTransition above the text fades it as its own alpha
+    // would, and what reaches the eye is the faded color over the background.
+    final Color faded = opacity < 1.0
+        ? declared.withValues(alpha: declared.a * opacity)
+        : declared;
+    final Color foreground = composited(faded, background);
     final double ratio = contrastRatio(foreground, background);
-    final double target = _isLargeText(style)
+    final double target = _isLargeText(style, scaler)
         ? MinimumTextContrastGuidelineAAA.kAAAMinimumRatioLargeText
         : MinimumTextContrastGuidelineAAA.kAAAMinimumRatioNormalText;
     if (ratio - target >= _tolerance) return const Evaluation.pass();
@@ -236,9 +260,13 @@ class DeclaredColorTextContrastGuidelineAAA extends AccessibilityGuideline {
   }
 
   // A style with no resolved size is measured as normal text, the stricter bar.
-  bool _isLargeText(TextStyle style) {
-    final double? size = style.fontSize;
-    if (size == null) return false;
+  // The size is the smaller of the declared and the painted one: text the app
+  // scales down below the large sizes is not large, and a larger text setting
+  // - which WCAG's definition of large text excludes - cannot make it so.
+  bool _isLargeText(TextStyle style, TextScaler scaler) {
+    final double? declared = style.fontSize;
+    if (declared == null) return false;
+    final double size = math.min(declared, scaler.scale(declared));
     final bool bold = (style.fontWeight?.value ?? 0) >= _boldWeight.value;
     return size >= _largeTextSize || (bold && size >= _largeBoldTextSize);
   }
@@ -259,7 +287,17 @@ class DeclaredColorTextContrastGuidelineAAA extends AccessibilityGuideline {
   // paragraph is held to the large-text bar instead of 7:1.
   List<TextStyle> _paintedSegments(Element element) {
     final Widget widget = element.widget;
-    if (widget is EditableText) return <TextStyle>[widget.style];
+    if (widget is EditableText) {
+      // What a field paints is its RenderEditable's span tree, which a
+      // controller's buildTextSpan can style apart from the widget's style.
+      final InlineSpan? painted = _descendant<RenderEditable>(
+        element.renderObject,
+      )?.text;
+      if (painted == null) return <TextStyle>[widget.style];
+      final segments = <TextStyle>{};
+      _collectSpanStyles(painted, widget.style, segments);
+      return segments.toList();
+    }
     if (widget is! Text) {
       throw StateError('Unexpected widget type: ${widget.runtimeType}');
     }
@@ -299,5 +337,40 @@ class DeclaredColorTextContrastGuidelineAAA extends AccessibilityGuideline {
     }
     // A PlaceholderSpan contributes no text of its own - the widget it hosts is
     // its own element, found and measured by its own `find.text` match.
+  }
+
+  // The product of every opacity layer above [renderObject].
+  double _ancestorOpacity(RenderObject renderObject) {
+    var opacity = 1.0;
+    RenderObject? current = renderObject.parent;
+    while (current != null) {
+      switch (current) {
+        case RenderOpacity(opacity: final double layer):
+        case RenderSliverOpacity(opacity: final double layer):
+          opacity *= layer;
+        case RenderAnimatedOpacity(opacity: final Animation<double> layer):
+        case RenderSliverAnimatedOpacity(
+          opacity: final Animation<double> layer,
+        ):
+          opacity *= layer.value;
+      }
+      current = current.parent;
+    }
+    return opacity;
+  }
+
+  // The scaler the text was laid out with, as its render object holds it.
+  TextScaler _paintedScaler(RenderObject renderObject) =>
+      _descendant<RenderParagraph>(renderObject)?.textScaler ??
+      _descendant<RenderEditable>(renderObject)?.textScaler ??
+      TextScaler.noScaling;
+
+  T? _descendant<T extends RenderObject>(RenderObject? root) {
+    if (root == null || root is T) return root as T?;
+    T? found;
+    root.visitChildren((RenderObject child) {
+      found ??= _descendant<T>(child);
+    });
+    return found;
   }
 }

@@ -324,4 +324,135 @@ void main() {
       );
     }
   });
+
+  // A short span's glyphs are a small share of the box, so a background picked
+  // as the most frequent non-own color could be the longer span's glyphs. A
+  // light span among dark ones on white must be measured against the white.
+  // At this size and line height the box font's black glyphs outnumber the
+  // white fill in the sampled box, which is the case that read as black.
+  testWidgets('a short span is measured against the fill, not other glyphs', (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    await _pumpText(
+      tester,
+      const Text.rich(
+        TextSpan(
+          style: TextStyle(color: Colors.black, fontSize: 60, height: 1.0),
+          children: [
+            TextSpan(text: 'MMMMMMMMMMMM'),
+            // About 2.3:1 on white.
+            TextSpan(
+              text: 'i',
+              style: TextStyle(color: Color(0xFFAAAAAA)),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    await expectLater(tester, doesNotMeetGuideline(textContrastGuidelineAAA));
+    handle.dispose();
+  });
+
+  // An Opacity above the text fades it as its own alpha would; measured at
+  // full strength, black faded to near-white would pass.
+  group('ancestor opacity', () {
+    Future<void> pumpFaded(WidgetTester tester, double opacity) => _pumpText(
+      tester,
+      Opacity(
+        opacity: opacity,
+        child: const Text(
+          'faded',
+          style: TextStyle(color: Colors.black, fontSize: 14),
+        ),
+      ),
+    );
+
+    testWidgets('faded text is measured as it is painted', (tester) async {
+      final handle = tester.ensureSemantics();
+      await pumpFaded(tester, 0.2);
+
+      await expectLater(tester, doesNotMeetGuideline(textContrastGuidelineAAA));
+      handle.dispose();
+    });
+
+    testWidgets('fully opaque text under an Opacity layer passes', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await pumpFaded(tester, 1.0);
+
+      await expectLater(tester, meetsGuideline(textContrastGuidelineAAA));
+      handle.dispose();
+    });
+  });
+
+  // A field paints its controller's span tree, which can be styled apart from
+  // the field's own style.
+  group('editable text', () {
+    Future<void> pumpField(WidgetTester tester, Color spanColor) => _pumpText(
+      tester,
+      SizedBox(
+        width: 200,
+        child: TextField(
+          controller: _StyledController(spanColor),
+          style: const TextStyle(color: Colors.black, fontSize: 14),
+        ),
+      ),
+    );
+
+    testWidgets('a controller span below the bar fails', (tester) async {
+      final handle = tester.ensureSemantics();
+      await pumpField(tester, const Color(0xFFAAAAAA));
+
+      await expectLater(tester, doesNotMeetGuideline(textContrastGuidelineAAA));
+      handle.dispose();
+    });
+
+    testWidgets('a controller span above the bar passes', (tester) async {
+      final handle = tester.ensureSemantics();
+      await pumpField(tester, Colors.black);
+
+      await expectLater(tester, meetsGuideline(textContrastGuidelineAAA));
+      handle.dispose();
+    });
+  });
+
+  // 24px is large text; scaled to half it paints at 12px, where #6E6E6E's
+  // 5.1:1 is under the normal-text bar. The unscaled twin is the 24px case in
+  // the threshold group above.
+  testWidgets('text scaled below the large sizes is held to 7:1', (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    await _pumpText(
+      tester,
+      const Text(
+        'scaled',
+        textScaler: TextScaler.linear(0.5),
+        style: TextStyle(color: _aaOnlyGrey, fontSize: 24),
+      ),
+    );
+
+    await expectLater(tester, doesNotMeetGuideline(textContrastGuidelineAAA));
+    handle.dispose();
+  });
+}
+
+// A controller that paints its text in a color of its own.
+class _StyledController extends TextEditingController {
+  _StyledController(this.color) : super(text: 'styled');
+
+  final Color color;
+
+  @override
+  TextSpan buildTextSpan({
+    required BuildContext context,
+    TextStyle? style,
+    required bool withComposing,
+  }) => TextSpan(
+    text: text,
+    style: style?.copyWith(color: color),
+  );
 }
