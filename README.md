@@ -173,10 +173,15 @@ pass, or measures less than the guideline's name suggests, so a page that
 passes is not proven compliant:
 
 - **One background per text element.** The background is the most frequent
-  color around the whole element's box, other than the text color. Spans of
-  one paragraph drawn over different fills share that one background. Text on
-  a fill of exactly its own color is measured against whatever surrounds the
-  fill.
+  color around the whole element's box, other than the declared color being
+  measured. Spans of one paragraph drawn over different fills share that one
+  background. Text on a fill of exactly its own color is measured against
+  whatever surrounds the fill. In a `Text.rich`, a short span can be measured
+  against the glyphs of a longer span in another color, and a large
+  translucent graphic against its own composited pixels.
+- **Editable text is measured in its widget style.** An `EditableText` whose
+  controller paints its own spans (a `buildTextSpan` override) is measured in
+  `EditableText.style`, not in the colors it paints.
 - **Text is located by its semantics label.** As in the stock guideline, the
   painted text is found with `find.text` on the node's label, so text whose
   semantics label differs from its characters (`Text(semanticsLabel: ...)`), or
