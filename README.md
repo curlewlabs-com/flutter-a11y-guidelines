@@ -225,9 +225,8 @@ under either license.
 
 ### Contribution
 
-Unless you explicitly state otherwise, any contribution intentionally submitted
-for inclusion in this project by you, as defined in the Apache-2.0 license,
-shall be dual licensed as above, without any additional terms or conditions.
+By submitting a contribution for inclusion in this project, you agree that it
+is dual licensed as above, without any additional terms or conditions.
 
 The test font under `test/fonts/` is Plus Jakarta Sans, under the SIL Open Font
 License beside it; it is used by the tests only and is not part of the
