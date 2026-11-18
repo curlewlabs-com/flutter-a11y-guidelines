@@ -21,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-24.04, macos-15]
+        runner: [ubuntu-24.04, macos-26]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     steps:
@@ -53,21 +53,6 @@ jobs:
       - name: Test
         run: flutter test
 
-  actionlint:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Run actionlint
-        # The installer script is pinned to a commit rather than its main
-        # branch, and fetches the release named after it. Renovate moves the
-        # release; the script's commit moves by hand, and need not match.
-        run: |
-          # renovate: datasource=github-releases depName=rhysd/actionlint extractVersion=^v(?<version>.+)$
-          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/914e7df21a07ef503a81201c76d2b11c789d3fca/scripts/download-actionlint.bash) 1.7.12
-          ./actionlint -color
-
   # The one check branch protection requires, so a job added above is covered
   # by adding it here.
   baseline:
@@ -79,16 +64,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: curlewlabs-com/ci-baseline@c82082df9a3c5e6dab047d9ddb92f130f1537d8e # v0.1.1
+      - uses: curlewlabs-com/ci-baseline@f05f17a38ba2dfbaf0cde130a375b346e9a923a2 # v0.2.0
 
   conclusion:
-    needs: [test, actionlint, baseline]
+    needs: [test, baseline]
     runs-on: ubuntu-24.04
     if: always()
     steps:
       - name: Require every job to pass
         env:
           TEST: ${{ needs.test.result }}
-          ACTIONLINT: ${{ needs.actionlint.result }}
           BASELINE: ${{ needs.baseline.result }}
-        run: test "$TEST" = success && test "$ACTIONLINT" = success && test "$BASELINE" = success
+        run: test "$TEST" = success && test "$BASELINE" = success
