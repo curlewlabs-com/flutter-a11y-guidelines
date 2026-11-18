@@ -70,8 +70,19 @@ jobs:
 
   # The one check branch protection requires, so a job added above is covered
   # by adding it here.
+  baseline:
+    # The checks every Curlew Labs repository runs, in one place:
+    # https://github.com/curlewlabs-com/ci-baseline
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: curlewlabs-com/ci-baseline@c82082df9a3c5e6dab047d9ddb92f130f1537d8e # v0.1.1
+
   conclusion:
-    needs: [test, actionlint]
+    needs: [test, actionlint, baseline]
     runs-on: ubuntu-24.04
     if: always()
     steps:
@@ -79,4 +90,5 @@ jobs:
         env:
           TEST: ${{ needs.test.result }}
           ACTIONLINT: ${{ needs.actionlint.result }}
-        run: test "$TEST" = success && test "$ACTIONLINT" = success
+          BASELINE: ${{ needs.baseline.result }}
+        run: test "$TEST" = success && test "$ACTIONLINT" = success && test "$BASELINE" = success
